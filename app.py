@@ -1,7 +1,7 @@
+import numpy as np
 import streamlit as st
 import re
 import spacy
-import numpy as np
 import chromadb
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -60,31 +60,30 @@ def initialize_system():
             current_chunk += " " + sentence
     if current_chunk:
         chunks.append(current_chunk.strip())
-
-    model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
-
-    # This creates a folder named 'chroma_data' in your project directory
-    client = chromadb.PersistentClient(path="./chroma_data")
-    try:
-        # 1. Check if data exists
-        collection = client.get_collection(name="auraflow_docs")
-        # Load chunks from the DB so 'chunks' variable is populated for the graph logic
-        chunks = collection.get()['documents'] 
-        print("Using existing Vector DB.")
-    except:
-        # 2. Only calculate embeddings if the DB is missing
-        print("Building Vector DB for the first time...")
-        embeddings = model.encode(chunks) # <--- Heavy lifting happens ONLY here
-        collection = client.create_collection(name="auraflow_docs")
-        ids = [f"chunk_{i}" for i in range(len(chunks))]
-        collection.add(embeddings=embeddings, documents=chunks, ids=ids)
-   # 3. Always rebuild the graph structure in memory (it's fast)
-    # Get embeddings for graph if we didn't just create them
-    if 'embeddings' not in locals():
-        # This fetches the existing math vectors from your hard drive
-        results = collection.get(include=['embeddings'])
-        embeddings = np.array(results['embeddings'])
     
+    model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
+    client = chromadb.PersistentClient(path="./chroma_data")
+    
+    try:
+        # 2. Try to Load Existing Data
+        collection = client.get_collection(name="auraflow_docs")
+        results = collection.get(include=['documents', 'embeddings'])
+        
+        chunks = results['documents']
+        embeddings = np.array(results['embeddings'])
+        print("✅ Loaded from Disk: Zero retraining required.")
+        
+    except Exception:
+        # 3. First-Time Setup Only
+        print("🚀 First-time Setup: Indexing documents...")
+        # [Insert your existing doc_text and chunking code here]
+        
+        embeddings = model.encode(chunks)
+        collection = client.create_collection(name="auraflow_docs")
+        ids = [f"id_{i}" for i in range(len(chunks))]
+        collection.add(embeddings=embeddings.tolist(), documents=chunks, ids=ids)
+    
+    # 4. Build Graph (Instant using the loaded embeddings)
     graph = {i: [] for i in range(len(chunks))}
     for i in range(len(chunks) - 1):
         graph[i].append(i + 1)
@@ -93,7 +92,7 @@ def initialize_system():
     similar_pairs = np.where(similarity_matrix > 0.80)
     for i, j in zip(*similar_pairs):
         if i != j and j not in graph[i]:
-            graph[i].append(int(j)) # Ensure it's a standard integer
+            graph[i].append(int(j))
 
     return model, collection, chunks, graph
 
