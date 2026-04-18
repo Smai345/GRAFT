@@ -62,17 +62,29 @@ def initialize_system():
         chunks.append(current_chunk.strip())
 
     model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
-    embeddings = model.encode(chunks)
 
-    client = chromadb.Client()
+    # This creates a folder named 'chroma_data' in your project directory
+    client = chromadb.PersistentClient(path="./chroma_data")
     try:
-        client.delete_collection("auraflow_docs")
+        # 1. Check if data exists
+        collection = client.get_collection(name="auraflow_docs")
+        # Load chunks from the DB so 'chunks' variable is populated for the graph logic
+        chunks = collection.get()['documents'] 
+        print("Using existing Vector DB.")
     except:
-        pass
-    collection = client.create_collection(name="auraflow_docs")
-    ids = [f"chunk_{i}" for i in range(len(chunks))]
-    collection.add(embeddings=embeddings, documents=chunks, ids=ids)
-
+        # 2. Only calculate embeddings if the DB is missing
+        print("Building Vector DB for the first time...")
+        embeddings = model.encode(chunks) # <--- Heavy lifting happens ONLY here
+        collection = client.create_collection(name="auraflow_docs")
+        ids = [f"chunk_{i}" for i in range(len(chunks))]
+        collection.add(embeddings=embeddings, documents=chunks, ids=ids)
+   # 3. Always rebuild the graph structure in memory (it's fast)
+    # Get embeddings for graph if we didn't just create them
+    if 'embeddings' not in locals():
+        # This fetches the existing math vectors from your hard drive
+        results = collection.get(include=['embeddings'])
+        embeddings = np.array(results['embeddings'])
+    
     graph = {i: [] for i in range(len(chunks))}
     for i in range(len(chunks) - 1):
         graph[i].append(i + 1)
@@ -81,7 +93,7 @@ def initialize_system():
     similar_pairs = np.where(similarity_matrix > 0.80)
     for i, j in zip(*similar_pairs):
         if i != j and j not in graph[i]:
-            graph[i].append(j)
+            graph[i].append(int(j)) # Ensure it's a standard integer
 
     return model, collection, chunks, graph
 
