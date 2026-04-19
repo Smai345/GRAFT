@@ -7,8 +7,15 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import google.generativeai as genai
 
+#embeddung MINILM
+
 # --- API Setup ---
-api_key = "AIzaSyAbXR2j3O0ZF6e_gZAfmN1Qf4LNx8CR-zc"
+if "GOOGLE_API_KEY" in st.secrets:
+    api_key = st.secrets["GOOGLE_API_KEY"]
+else:
+    # Fallback for local testing if secrets.toml isn't used 
+    api_key = ""
+    
 genai.configure(api_key=api_key)
 
 # --- Cache Setup (Runs once so the UI is fast) ---
@@ -97,7 +104,7 @@ def initialize_system():
     return model, collection, chunks, graph
 
 # --- Core Functions ---
-def query_vector_db_with_scores(query, collection, model, n_results=3):
+def query_vector_db_with_scores(query, collection, model, n_results=5):
     query_embedding = model.encode(query).tolist()
     results = collection.query(query_embeddings=[query_embedding], n_results=n_results)
     return results['documents'][0], results['distances'][0]

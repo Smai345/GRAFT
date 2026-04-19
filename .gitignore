@@ -49,3 +49,4 @@ runs/
 .DS_Store
 Thumbs.db
 chroma_data/
+.streamlit/secrets.toml
